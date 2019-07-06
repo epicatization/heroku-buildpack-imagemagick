@@ -8,10 +8,10 @@ echo "-----> Install ImageMagick"
 
 BUILD_DIR=$1
 CACHE_DIR=$2
-CACHE_ENABLED=true
+CACHE_ENABLED=false
 VENDOR_DIR="$BUILD_DIR/vendor"
 INSTALL_DIR="$VENDOR_DIR/imagemagick"
-IMAGE_MAGICK_VERSION="7.0.8-52"
+IMAGE_MAGICK_VERSION="7.0.8-49"
 CACHE_FILE="$CACHE_DIR/imagemagick-$IMAGE_MAGICK_VERSION.tar.gz"
 
 if [ ! -f $CACHE_FILE ] || [ $CACHE_ENABLED != 'true' ]; then
@@ -19,6 +19,21 @@ if [ ! -f $CACHE_FILE ] || [ $CACHE_ENABLED != 'true' ]; then
   IMAGE_MAGICK_FILE="ImageMagick-$IMAGE_MAGICK_VERSION.tar.xz"
   IMAGE_MAGICK_DIR="ImageMagick-$IMAGE_MAGICK_VERSION"
   IMAGE_MAGICK_URL="https://raw.githubusercontent.com/epicatization/heroku-buildpack-imagemagick/master/$IMAGE_MAGICK_FILE"
+  echo "-----> compiling libde265"
+  git clone https://github.com/strukturag/libde265.git
+  cd libde265
+  ./autogen.sh
+  ./configure --prefix=$INSTALL_DIR
+  make && make install
+  cd ..
+
+  echo "-----> compiling libheif"
+  git clone https://github.com/strukturag/libheif.git
+  cd libheif
+  ./autogen.sh
+  ./configure --prefix=$INSTALL_DIR
+  make && make install
+  cd ..
 
   echo "-----> Downloading ImageMagick from $IMAGE_MAGICK_URL"
   wget $IMAGE_MAGICK_URL -P $BUILD_DIR | indent
@@ -35,8 +50,7 @@ if [ ! -f $CACHE_FILE ] || [ $CACHE_ENABLED != 'true' ]; then
   cd $IMAGE_MAGICK_DIR
   export CPPFLAGS="-I$INSTALL_DIR/include"
   export LDFLAGS="-L$INSTALL_DIR/lib"
-
-  ./configure --with-webp=yes --with-heic=yes --prefix=$INSTALL_DIR
+  ./configure --with-heic=yes --prefix=$INSTALL_DIR
   make && make install
   cd ..
   rm -rf $IMAGE_MAGICK_DIR
