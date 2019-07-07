@@ -1,9 +1,5 @@
 #!/bin/bash
 
-indent() {
-  sed -u 's/^/       /'
-}
-
 echo "-----> Install ImageMagick"
 
 BUILD_DIR=$1
@@ -11,7 +7,7 @@ CACHE_DIR=$2
 CACHE_ENABLED=false
 VENDOR_DIR="$BUILD_DIR/vendor"
 INSTALL_DIR="$VENDOR_DIR/imagemagick"
-IMAGE_MAGICK_VERSION="7.0.8-49"
+IMAGE_MAGICK_VERSION="7.0.8-52"
 CACHE_FILE="$CACHE_DIR/imagemagick-$IMAGE_MAGICK_VERSION.tar.gz"
 
 if [ ! -f $CACHE_FILE ] || [ $CACHE_ENABLED != 'true' ]; then
@@ -20,40 +16,37 @@ if [ ! -f $CACHE_FILE ] || [ $CACHE_ENABLED != 'true' ]; then
   IMAGE_MAGICK_DIR="ImageMagick-$IMAGE_MAGICK_VERSION"
   IMAGE_MAGICK_URL="https://raw.githubusercontent.com/epicatization/heroku-buildpack-imagemagick/master/$IMAGE_MAGICK_FILE"
   echo "-----> compiling libde265"
+  cd $VENDOR_DIR
   git clone https://github.com/strukturag/libde265.git
   cd libde265
   ./autogen.sh
-  ./configure --prefix=$INSTALL_DIR
-  make && make install
-  cd ..
+  ./configure
+  make
+  make install
 
   echo "-----> compiling libheif"
+  cd $VENDOR_DIR
   git clone https://github.com/strukturag/libheif.git
   cd libheif
   ./autogen.sh
-  ./configure --prefix=$INSTALL_DIR
-  make && make install
+  ./configure
+  make
+  make install
   cd ..
 
   echo "-----> Downloading ImageMagick from $IMAGE_MAGICK_URL"
-  wget $IMAGE_MAGICK_URL -P $BUILD_DIR | indent
+  cd $VENDOR_DIR
+  wget $IMAGE_MAGICK_URL
 
   echo "-----> Extracting ImageMagick from $BUILD_DIR/$IMAGE_MAGICK_FILE"
-  if [ ! -f $BUILD_DIR/$IMAGE_MAGICK_FILE ]; then
-    echo "Error: Unable to download ImageMagick" | indent
-    ls $BUILD_DIR | indent
-    exit 1;
-  fi
-  tar xvf $BUILD_DIR/$IMAGE_MAGICK_FILE | indent
+  tar xvf $IMAGE_MAGICK_FILE
 
   echo "-----> Building ImageMagick"
   cd $IMAGE_MAGICK_DIR
-  export CPPFLAGS="-I$INSTALL_DIR/include"
-  export LDFLAGS="-L$INSTALL_DIR/lib"
-  ./configure --with-heic=yes --prefix=$INSTALL_DIR
-  make && make install
-  cd ..
-  rm -rf $IMAGE_MAGICK_DIR
+  ./configure --with-heic=yes
+  make
+  make install
+  sh magick.sh
 
   # cache for future deploys
   echo "-----> Caching ImageMagick installation"
@@ -73,39 +66,3 @@ else
   mkdir -p $VENDOR_DIR
   tar xzf $CACHE_FILE -C $VENDOR_DIR
 fi
-
-echo "-----> Writing policy file"
-mkdir -p $INSTALL_DIR/etc/ImageMagick
-cat > $INSTALL_DIR/policy.xml <<EOF
-<policymap>
-  <policy domain="resource" name="memory" value="256MiB"/>
-  <policy domain="resource" name="map" value="512MiB"/>
-  <policy domain="resource" name="width" value="20KP"/>
-  <policy domain="resource" name="height" value="20KP"/>
-  <policy domain="resource" name="area" value="128MB"/>
-  <policy domain="resource" name="disk" value="1GiB"/>
-  <policy domain="delegate" rights="none" pattern="URL" />
-  <policy domain="delegate" rights="none" pattern="HTTPS" />
-  <policy domain="delegate" rights="none" pattern="HTTP" />
-  <policy domain="path" rights="none" pattern="@*"/>
-  <policy domain="cache" name="shared-secret" value="passphrase" stealth="true"/>
-</policymap>
-EOF
-
-echo "-----> Writing config file"
-cat > $INSTALL_DIR/magic.xml <<EOF
-<magicmap>
- <magic name="JPEG" offset="0" target="\377\330\377"/>
- <magic name="PNG" offset="0" target="\211PNG\r\n\032\n"/>
-</magicmap>
-EOF
-
-# update PATH and LD_LIBRARY_PATH
-echo "-----> Updating environment variables"
-PROFILE_PATH="$BUILD_DIR/.profile.d/imagemagick.sh"
-ACTUAL_INSTALL_PATH="$HOME/vendor/imagemagick"
-mkdir -p $(dirname $PROFILE_PATH)
-echo "export PATH=$ACTUAL_INSTALL_PATH/bin:\$PATH" >> $PROFILE_PATH
-echo "export LD_LIBRARY_PATH=$ACTUAL_INSTALL_PATH/lib:\$LD_LIBRARY_PATH:/usr/local/lib" >> $PROFILE_PATH
-echo "export MAGICK_CONFIGURE_PATH=$ACTUAL_INSTALL_PATH" >> $PROFILE_PATH
-echo "-----> Done updating environment variables. All set for ImageMagick."
