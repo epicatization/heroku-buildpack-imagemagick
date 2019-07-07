@@ -52,6 +52,10 @@ RUN cd /usr/src/ \
 RUN cp /usr/local/lib/libde265.so.0 /usr/src/imagemagick/lib \
   && cp /usr/local/lib/libheif.so.1 /usr/src/imagemagick/lib
 
+# clean the build area ready for packaging
+RUN cd /usr/src/imagemagick \
+  && strip lib/*.a lib/lib*.so*
+
 RUN cd /usr/src/imagemagick \
   && rm -rf build \
   && mkdir build \
