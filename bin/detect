@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /bin/bash
 
-echo "ImageMagick"
-exit 0
+# Always use when requested
+echo "imagemagick" && exit 0

@@ -1,77 +1,74 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir>
 
-echo "-----> Install ImageMagick with HEIF"
+set -e
 
 BUILD_DIR=$1
 CACHE_DIR=$2
-VENDOR_DIR="$BUILD_DIR/vendor"
-mkdir -p $VENDOR_DIR
-INSTALL_DIR="$VENDOR_DIR/imagemagick"
-mkdir -p $INSTALL_DIR
-IMAGE_MAGICK_VERSION="7.0.8-52"
-CACHE_FILE="$CACHE_DIR/imagemagick-$IMAGE_MAGICK_VERSION.tar.gz"
+BUILDPACK_NAME=imagemagick
+BIN_DIR=$(cd "$(dirname "$0")"; pwd) # absolute path
+ROOT_DIR=$(dirname "$BIN_DIR")
 
-# if [ ! -f $CACHE_FILE ]; then
-  echo "-----> compiling libde265"
-  cd $VENDOR_DIR
-  curl -L https://github.com/strukturag/libde265/releases/download/v1.0.3/libde265-1.0.3.tar.gz | tar zx
-  cd libde265-1.0.3
-  ./autogen.sh && ./configure && make && make install
+function indent() {
+  c='s/^/       /'
+  case $(uname) in
+    Darwin) sed -l "$c";;
+    *)      sed -u "$c";;
+  esac
+}
 
-  echo "-----> compiling libheif"
-  cd $VENDOR_DIR
-  curl -L https://github.com/strukturag/libheif/releases/download/v1.3.2/libheif-1.3.2.tar.gz | tar zx
-  cd libheif-1.3.2
-  export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-  export LDFLAGS=-L/usr/local/lib
-  export CPPFLAGS=-I/usr/local/include/libde265
-  ./autogen.sh && ./configure && make && make install
+arrow() {
+  sed -u 's/^/-----> /'
+}
 
-  # install imagemagick
-  IMAGE_MAGICK_FILE="ImageMagick-$IMAGE_MAGICK_VERSION.tar.xz"
-  IMAGE_MAGICK_DIR="ImageMagick-$IMAGE_MAGICK_VERSION"
-  IMAGE_MAGICK_URL="https://raw.githubusercontent.com/epicatization/heroku-buildpack-imagemagick/master/$IMAGE_MAGICK_FILE"
-  echo "-----> Downloading ImageMagick from $IMAGE_MAGICK_URL"
-  cd $VENDOR_DIR
-  wget $IMAGE_MAGICK_URL
+function vendor() {
+  binary="$1"
+  path="$2"
 
-  echo "-----> Extracting ImageMagick from $VENDOR_DIR/$IMAGE_MAGICK_FILE"
-  tar xvf $IMAGE_MAGICK_FILE
+  echo "Fetching $binary" | indent
+  mkdir -p $path
+  tar -xz -f $binary -C $path
 
-  echo "-----> Building ImageMagick"
-  cd $IMAGE_MAGICK_DIR
-  export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-  export LDFLAGS=-L/usr/local/lib
-  export CPPFLAGS=-I/usr/local/include/libheif
-  ./configure --with-heic=yes --prefix=$INSTALL_DIR
-  make
-  make install
-  # sh magick.sh
-
-  # cache for future deploys
-  echo "-----> Caching ImageMagick installation"
-  cd $VENDOR_DIR
-  REL_INSTALL_DIR="imagemagick"
-  tar czf $REL_INSTALL_DIR.tar.gz $REL_INSTALL_DIR
-
-  if [ ! -d $CACHE_DIR ]; then
-    mkdir -p $CACHE_DIR
+  if [ -d "$path/bin" ]; then
+    export PATH=$path/bin:$PATH
   fi
 
-  mv $REL_INSTALL_DIR.tar.gz $CACHE_FILE
+  if [ -d "$path/lib/pkgconfig" ]; then
+    # pkg-config should handle compiler options (if used)
+    export PKG_CONFIG_PATH="$path/lib/pkgconfig:$PKG_CONFIG_PATH"
+  fi
 
-# else
-#   # cache exists, extract it
-#   echo "-----> Extracting ImageMagick $CACHE_FILE => $VENDOR_DIR"
-#   mkdir -p $VENDOR_DIR
-#   tar xzf $CACHE_FILE -C $VENDOR_DIR
-# fi
+  # standard paths
+  export CPPPATH="$path/include:$CPPPATH"
+  export CPATH="$path/include:$CPATH"
+  export LIBRARY_PATH="$path/lib:$LIBRARY_PATH"
 
-echo "-----> Updating environment variables"
-PROFILE_PATH="$BUILD_DIR/.profile.d/imagemagick.sh"
-ACTUAL_INSTALL_PATH="$HOME/vendor/imagemagick"
-mkdir -p $(dirname $PROFILE_PATH)
-echo "export PATH=$ACTUAL_INSTALL_PATH/bin:\$PATH" >> $PROFILE_PATH
-echo "export LD_LIBRARY_PATH=$INSTALL_DIR/lib:\$LD_LIBRARY_PATH:/usr/local/lib" >> $PROFILE_PATH
-echo "export MAGICK_CONFIGURE_PATH=$ACTUAL_INSTALL_PATH" >> $PROFILE_PATH
-echo "-----> Done updating environment variables. All set for ImageMagick."
+  export LD_LIBRARY_PATH="$path/lib:$LD_LIBRARY_PATH"
+}
+
+echo "Vendoring binaries" | arrow
+
+vendor "${ROOT_DIR}/build/imagemagick.tar.gz" "$BUILD_DIR/vendor/imagemagick"
+
+echo "Configuring build environment" | arrow
+
+cat <<EOF > export
+export PATH="/app/bin:$PATH:\$PATH"
+export LD_LIBRARY_PATH="\$LD_LIBRARY_PATH:$LD_LIBRARY_PATH"
+export LIBRARY_PATH="\$LIBRARY_PATH:$LIBRARY_PATH"
+export PKG_CONFIG_PATH="\$PKG_CONFIG_PATH:$PKG_CONFIG_PATH"
+export CPPPATH="\$CPPPATH:$CPPPATH"
+export CPATH="\$CPATH:$CPATH"
+EOF
+
+echo "Building runtime environment" | arrow
+mkdir -p $BUILD_DIR/.profile.d
+
+cat <<EOF > $BUILD_DIR/.profile.d/$BUILDPACK_NAME.sh
+export PATH="/app/bin:${PATH//$BUILD_DIR//app}:\$PATH"
+export LD_LIBRARY_PATH="\$LD_LIBRARY_PATH:${LD_LIBRARY_PATH//$BUILD_DIR//app}"
+export LIBRARY_PATH="\$LIBRARY_PATH:${LIBRARY_PATH//$BUILD_DIR//app}"
+export PKG_CONFIG_PATH="\$PKG_CONFIG_PATH:${PKG_CONFIG_PATH//$BUILD_DIR//app}"
+export CPPPATH="\$CPPPATH:${CPPPATH//$BUILD_DIR//app}"
+export CPATH="\$CPATH:${CPATH//$BUILD_DIR//app}"
+EOF
